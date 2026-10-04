@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Pencarian Data Warga</title>
+  <style>
+    * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { background-color: #f4f7f6; margin: 0; padding: 20px; display: flex; justify-content: center; }
+    .container { width: 100%; max-width: 1000px; background: #ffffff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+    h2 { text-align: center; color: #1a73e8; margin-top: 0; }
+    p.subtitle { text-align: center; color: #666; margin-bottom: 20px; }
+    
+    .connection-status {
+      text-align: center;
+      font-size: 13px;
+      padding: 6px 12px;
+      border-radius: 20px;
+      margin-bottom: 20px;
+      display: inline-block;
+      font-weight: bold;
+    }
+    .connected { background-color: #e6f4ea; color: #137333; }
+    .disconnected { background-color: #feefc3; color: #b06000; }
+
+    .search-box { display: flex; gap: 10px; margin-bottom: 25px; }
+    input[type="text"] { flex: 1; padding: 12px 16px; font-size: 16px; border: 2px solid #ddd; border-radius: 8px; outline: none; }
+    input[type="text"]:focus { border-color: #1a73e8; }
+    button { padding: 12px 24px; font-size: 16px; background-color: #1a73e8; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+    button:hover { background-color: #1557b0; }
+    
+    .status-card { padding: 15px; border-radius: 8px; text-align: center; font-size: 18px; font-weight: bold; display: none; margin-bottom: 20px; }
+    .status-terdaftar { background-color: #e6f4ea; color: #137333; border: 1px solid #ceedd5; }
+    .status-tidak-terdaftar { background-color: #fce8e6; color: #c5221f; border: 1px solid #fad2cf; }
+    
+    .loading { text-align: center; color: #666; display: none; font-style: italic; margin-bottom: 15px; }
+    
+    .table-responsive { width: 100%; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; display: none; }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; white-space: nowrap; }
+    th { background-color: #1a73e8; color: white; }
+    tr:hover { background-color: #f1f3f4; }
+    .badge-aktif { color: #137333; font-weight: bold; background: #e6f4ea; padding: 4px 8px; border-radius: 4px; }
+    .badge-nonaktif { color: #c5221f; font-weight: bold; background: #fce8e6; padding: 4px 8px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+
+<div class="container" style="text-align: center;">
+  <h2>🔍 Dashboard Pencarian Data Warga</h2>
+  <p class="subtitle">Cek NIK atau Nama Anda di sini</p>
+  
+  <div id="connStatus" class="connection-status disconnected">⚡ Menghubungkan ke Spreadsheet...</div>
+
+  <div class="search-box">
+    <input type="text" id="keyword" placeholder="Masukkan NIK atau Nama..." onkeypress="handleKeyPress(event)">
+    <button onclick="cariData()">Cari Data</button>
+  </div>
+
+  <div id="loading" class="loading">Memeriksa database spreadsheet...</div>
+  <div id="statusCard" class="status-card"></div>
+
+  <div class="table-responsive">
+    <table id="resultTable">
+      <thead>
+        <tr>
+          <th>NIK</th>
+          <th>Nama</th>
+          <th>Tanggal Lahir</th>
+          <th>Status</th>
+          <th>Alamat</th>
+          <th>RT</th>
+          <th>RW</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  const SPREADSHEET_ID = '1fskAuWdusEyU7a9TDuN35jxDw4hQZZzLi-_agRyYmgw';
+  const SHEET_GID = '393678608'; // GID Tab 'Data_Utama'
+
+  let databaseRows = [];
+  let isConnected = false;
+
+  function initDatabaseConnection() {
+    const scriptUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=responseHandler:handleSpreadsheetData&gid=${SHEET_GID}`;
+    
+    const script = document.createElement('script');
+    script.src = scriptUrl;
+    script.onerror = function() {
+      const connStatus = document.getElementById('connStatus');
+      connStatus.className = 'connection-status disconnected';
+      connStatus.innerHTML = '❌ Gagal Terhubung. Pastikan Akses Spreadsheet sudah "Siapa saja yang memiliki link".';
+    };
+    document.body.appendChild(script);
+  }
+
+  function handleSpreadsheetData(json) {
+    const connStatus = document.getElementById('connStatus');
+    if (json && json.table && json.table.rows) {
+      databaseRows = json.table.rows;
+      isConnected = true;
+      connStatus.className = 'connection-status connected';
+      connStatus.innerHTML = `🟢 Terhubung ke Spreadsheet (${databaseRows.length} baris data dimuat)`;
+    } else {
+      connStatus.className = 'connection-status disconnected';
+      connStatus.innerHTML = '⚠️ Terhubung tetapi data di tab "Data_Utama" kosong.';
+    }
+  }
+
+  function handleKeyPress(event) {
+    if (event.key === 'Enter') {
+      cariData();
+    }
+  }
+
+  function cariData() {
+    const keyword = document.getElementById('keyword').value.trim();
+    const loading = document.getElementById('loading');
+    const statusCard = document.getElementById('statusCard');
+    const resultTable = document.getElementById('resultTable');
+    const tableBody = document.getElementById('tableBody');
+
+    if (!keyword) {
+      alert('Silakan masukkan NIK atau Nama terlebih dahulu!');
+      return;
+    }
+
+    if (!isConnected) {
+      alert('Aplikasi belum terhubung ke Spreadsheet. Mohon pastikan file dapat diakses publik.');
+      return;
+    }
+
+    loading.style.display = 'block';
+    statusCard.style.display = 'none';
+    resultTable.style.display = 'none';
+    tableBody.innerHTML = '';
+
+    setTimeout(() => {
+      loading.style.display = 'none';
+      const searchKey = keyword.toLowerCase();
+
+      // Pencarian berdasarkan NIK (c[0]) atau Nama (c[1])
+      const matchedRows = databaseRows.filter(row => {
+        if (!row.c) return false;
+        const nik = (row.c[0] && row.c[0].v !== null) ? row.c[0].v.toString().toLowerCase() : '';
+        const nama = (row.c[1] && row.c[1].v !== null) ? row.c[1].v.toString().toLowerCase() : '';
+        return nik.includes(searchKey) || nama.includes(searchKey);
+      });
+
+      if (matchedRows.length > 0) {
+        statusCard.className = 'status-card status-terdaftar';
+        statusCard.innerHTML = `✅ DATA TERDAFTAR (${matchedRows.length} data ditemukan)`;
+        statusCard.style.display = 'block';
+
+        // Menampilkan hasil dalam urutan persis seperti spreadsheet:
+        // 1. NIK (c[0]) | 2. Nama (c[1]) | 3. Tgl Lahir (c[2]) | 4. Status (c[3]) | 5. Alamat (c[4]) | 6. RT (c[5]) | 7. RW (c[6])
+        tableBody.innerHTML = matchedRows.map(row => {
+          const c = row.c;
+          const nik = (c[0] && c[0].v !== null) ? c[0].v : '-';
+          const nama = (c[1] && c[1].v !== null) ? c[1].v : '-';
+          const tglLahir = (c[2] && (c[2].f || c[2].v !== null)) ? (c[2].f || c[2].v) : '-';
+          const status = (c[3] && c[3].v !== null) ? c[3].v : '-';
+          const alamat = (c[4] && c[4].v !== null) ? c[4].v : '-';
+          const rt = (c[5] && c[5].v !== null) ? c[5].v : '-';
+          const rw = (c[6] && c[6].v !== null) ? c[6].v : '-';
+
+          const statusBadge = status.toString().toLowerCase() === 'aktif' 
+            ? `<span class="badge-aktif">${status}</span>` 
+            : `<span class="badge-nonaktif">${status}</span>`;
+
+          return `
+            <tr>
+              <td><b>${nik}</b></td>
+              <td>${nama}</td>
+              <td>${tglLahir}</td>
+              <td>${statusBadge}</td>
+              <td>${alamat}</td>
+              <td>${rt}</td>
+              <td>${rw}</td>
+            </tr>
+          `;
+        }).join('');
+
+        resultTable.style.display = 'table';
+      } else {
+        statusCard.className = 'status-card status-tidak-terdaftar';
+        statusCard.innerHTML = '❌ DATA TIDAK TERDAFTAR';
+        statusCard.style.display = 'block';
+      }
+    }, 300);
+  }
+
+  window.onload = initDatabaseConnection;
+</script>
+
+</body>
+</html>
